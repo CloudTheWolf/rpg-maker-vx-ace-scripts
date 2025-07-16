@@ -1,0 +1,88 @@
+#==============================================================================
+# CloudTheWolf Persistent Armor Type Unlocker
+# Author: CloudTheWolf
+# Date 16/07/2025
+# Version: 1.0.0
+#===============================================================================
+#
+# To use, just add/update the patches set in TRAIT_PATECHS 
+# then turn ON the specified switch in an event.
+# Currently this only supports Armor, and not Weapons.
+# Also Note, this currently only supports Adding but not removing.
+#
+#===============================================================================
+module PersistentTraitPatcher
+  # Each patch unlocks an armor type (armor_type_id) for a specific actor,
+  # if a given switch is ON.
+  TRAIT_PATCHES = [
+    {
+      actor_id: 1,
+      armor_type_id: 2,
+      switch_id: 91
+    },
+    {  
+      actor_id: 2,
+      armor_type_id: 4,
+      switch_id: 92
+    },
+    # Add more here as needed
+  ]
+
+  def self.apply_all
+    TRAIT_PATCHES.each do |patch|
+      next unless $game_switches[patch[:switch_id]]
+      actor = $game_actors[patch[:actor_id]]
+      actor.grant_armor_type(patch[:armor_type_id])
+    end
+  end
+end
+
+# Extend Game_Actor to store dynamic armor type unlocks
+class Game_Actor < Game_Battler
+  
+  alias_method :setup_original, :setup
+  def setup(actor_id)
+    setup_original(actor_id)
+    @unlocked_armor_types = []
+  end
+
+  def grant_armor_type(armor_type_id)
+    @unlocked_armor_types ||= []
+    return if @unlocked_armor_types.include?(armor_type_id)
+    @unlocked_armor_types << armor_type_id
+    p "[TraitPatch] Actor #{self.id} unlocked Armor Type #{armor_type_id}"
+  end
+
+  alias_method :features_original, :features
+  def features(code = nil)
+    all = features_original(code)
+    return all unless @unlocked_armor_types
+
+    extra = @unlocked_armor_types.map do |armor_type_id|
+      f = RPG::BaseItem::Feature.new
+      f.code = 52  # 52 = FEATURE_EQUIP_ARMOR
+      f.data_id = armor_type_id
+      f.value = 0
+      f
+    end
+
+    all + (code ? extra.select { |f| f.code == code } : extra)
+  end
+end
+
+# Apply patcher on load and map enter
+class Scene_Map < Scene_Base
+  alias start_with_trait_patch start
+  def start
+    start_with_trait_patch
+    PersistentTraitPatcher.apply_all
+  end
+end
+
+class Scene_Load < Scene_File
+  alias on_load_success_with_trait_patch on_load_success
+  def on_load_success
+    on_load_success_with_trait_patch
+    PersistentTraitPatcher.apply_all
+  end
+end
